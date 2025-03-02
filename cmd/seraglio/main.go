@@ -23,6 +23,7 @@ type Bot struct {
 type UserSession struct {
 	SessionID string `gorm:"primaryKey"`
 	UserID    string `gorm:"index"`
+	GuildID   string `gorm:"index"`
 	ChannelID string `gorm:"index"`
 	StartTime time.Time
 	EndTime   *time.Time
@@ -167,6 +168,7 @@ func (b *Bot) GuildCreate(s *discordgo.Session, gc *discordgo.GuildCreate) {
 				time.Now().Format(time.RFC3339),
 			),
 			UserID:    vs.UserID,
+			GuildID:   gc.ID,
 			ChannelID: vs.ChannelID,
 			StartTime: time.Now(),
 		}
@@ -185,6 +187,7 @@ func (b *Bot) userJoin(s *discordgo.Session, vs *discordgo.VoiceStateUpdate) {
 				time.Now().Format(time.RFC3339),
 			),
 			UserID:    vs.UserID,
+			GuildID:   vs.GuildID,
 			ChannelID: vs.ChannelID,
 			StartTime: time.Now(),
 		}
@@ -217,7 +220,7 @@ func (b *Bot) handleTimespent(
 	usrID := usr.UserValue(nil).ID
 
 	var sessions []UserSession
-	if err := b.db.Raw("SELECT * FROM user_sessions WHERE user_id = ?", usrID).Scan(&sessions).Error; err != nil {
+	if err := b.db.Raw("SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ?", usrID, i.GuildID).Scan(&sessions).Error; err != nil {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{

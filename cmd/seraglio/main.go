@@ -255,7 +255,7 @@ func (b *Bot) handleTimespent(
 			Content: fmt.Sprintf(
 				"User %s has spent %s in voice channels",
 				usr.UserValue(nil).Mention(),
-				total,
+				total.Truncate(time.Second),
 			),
 		},
 	})

@@ -179,7 +179,7 @@ func (b *Bot) GuildCreate(s *discordgo.Session, gc *discordgo.GuildCreate) {
 func (b *Bot) userJoin(s *discordgo.Session, vs *discordgo.VoiceStateUpdate) {
 	if vs.ChannelID != "" {
 		var rows []UserSession
-		if err := b.db.Exec("SELECT * FROM user_sessions WHERE user_id = ? AND end_time IS NULL", vs.UserID).Scan(&rows).Error; err != nil {
+		if err := b.db.Raw("SELECT * FROM user_sessions WHERE user_id = ? AND end_time IS NULL", vs.UserID).Scan(&rows).Error; err != nil {
 			log.Printf("Error checking for existing user session: %v", err)
 			return
 		}

@@ -49,6 +49,12 @@ var commands = []*discordgo.ApplicationCommand{
 				},
 				Required: false,
 			},
+			{
+				Name:        "ephemeral",
+				Description: "The message is only visibile to you",
+				Type:        discordgo.ApplicationCommandOptionBoolean,
+				Required:    false,
+			},
 		},
 	},
 }
@@ -74,7 +80,7 @@ func main() {
 			}
 			appid := cmd.String("app-id")
 			if token == "" {
-				return fmt.Errorf("Discord token is required")
+				return fmt.Errorf("Application ID is required")
 			}
 			bot, err := NewBot(token, appid)
 			if err != nil {
@@ -249,6 +255,13 @@ func (b *Bot) handleTimespent(
 		total += s.EndTime.Sub(s.StartTime)
 	}
 
+	var flags discordgo.MessageFlags
+	if ephemeral, ok := opts["ephemeral"]; ok {
+		if ephemeral.BoolValue() {
+			flags = discordgo.MessageFlagsEphemeral
+		}
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -257,6 +270,7 @@ func (b *Bot) handleTimespent(
 				usr.UserValue(nil).Mention(),
 				total.Truncate(time.Second),
 			),
+			Flags: flags,
 		},
 	})
 }

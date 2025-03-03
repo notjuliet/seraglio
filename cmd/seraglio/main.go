@@ -394,8 +394,17 @@ func (b *Bot) handleLeaderboard(
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: content,
-			Flags:   flags,
-		},
-	})
+			Flags: flags,
+			Embeds: []*discordgo.MessageEmbed{
+				{
+					Title: "Leaderboard",
+					Fields: []*discordgo.MessageEmbedField{
+						{
+							Name:  "Time Spent in VC",
+							Value: content,
+						},
+					},
+				},
+			},
+		}})
 }

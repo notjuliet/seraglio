@@ -290,7 +290,7 @@ func (b *Bot) handleTimespent(
 		total += se.EndTime.Sub(se.StartTime)
 	}
 
-	var flags discordgo.MessageFlags
+	flags := discordgo.MessageFlagsSuppressNotifications
 	if ephemeral, ok := opts["ephemeral"]; ok {
 		if ephemeral.BoolValue() {
 			flags = discordgo.MessageFlagsEphemeral
@@ -320,7 +320,7 @@ func (b *Bot) handleLeaderboard(
 		channel = c
 	}
 
-	var flags discordgo.MessageFlags
+	flags := discordgo.MessageFlagsSuppressNotifications
 	if ephemeral, ok := opts["ephemeral"]; ok {
 		if ephemeral.BoolValue() {
 			flags = discordgo.MessageFlagsEphemeral

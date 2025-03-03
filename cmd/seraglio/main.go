@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -40,6 +41,27 @@ var commands = []*discordgo.ApplicationCommand{
 				Type:        discordgo.ApplicationCommandOptionUser,
 				Required:    true,
 			},
+			{
+				Name:        "channel",
+				Description: "Name of the channel",
+				Type:        discordgo.ApplicationCommandOptionChannel,
+				ChannelTypes: []discordgo.ChannelType{
+					discordgo.ChannelTypeGuildVoice,
+				},
+				Required: false,
+			},
+			{
+				Name:        "ephemeral",
+				Description: "The message is only visibile to you",
+				Type:        discordgo.ApplicationCommandOptionBoolean,
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name:        "leaderboard",
+		Description: "VC activity leaderboard",
+		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Name:        "channel",
 				Description: "Name of the channel",
@@ -130,11 +152,11 @@ func NewBot(token string, appid string) (*Bot, error) {
 		}
 
 		data := i.ApplicationCommandData()
-		if data.Name != "timespent" {
-			return
+		if data.Name == "timespent" {
+			b.handleTimespent(s, i, parseOptions(data.Options))
+		} else if data.Name == "leaderboard" {
+			b.handleLeaderboard(s, i, parseOptions(data.Options))
 		}
-
-		b.handleTimespent(s, i, parseOptions(data.Options))
 	})
 
 	_, err = dg.ApplicationCommandBulkOverwrite(appid, "", commands)
@@ -232,11 +254,24 @@ func (b *Bot) handleTimespent(
 		})
 		return
 	}
-
 	usrID := usr.UserValue(nil).ID
 
+	var channel *discordgo.ApplicationCommandInteractionDataOption
+	if c, ok := opts["channel"]; ok {
+		channel = c
+	}
+
+	var q string
+	var args []any
+	if channel != nil {
+		q = "SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ? AND channel_id = ?"
+		args = []any{usrID, i.GuildID, channel.ChannelValue(nil).ID}
+	} else {
+		q = "SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ?"
+		args = []any{usrID, i.GuildID}
+	}
 	var sessions []UserSession
-	if err := b.db.Raw("SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ?", usrID, i.GuildID).Scan(&sessions).Error; err != nil {
+	if err := b.db.Raw(q, args...).Scan(&sessions).Error; err != nil {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{
@@ -247,12 +282,12 @@ func (b *Bot) handleTimespent(
 	}
 
 	var total time.Duration
-	for _, s := range sessions {
-		if s.EndTime == nil {
+	for _, se := range sessions {
+		if se.EndTime == nil {
 			t := time.Now()
-			s.EndTime = &t
+			se.EndTime = &t
 		}
-		total += s.EndTime.Sub(s.StartTime)
+		total += se.EndTime.Sub(se.StartTime)
 	}
 
 	var flags discordgo.MessageFlags
@@ -271,6 +306,96 @@ func (b *Bot) handleTimespent(
 				total.Truncate(time.Second),
 			),
 			Flags: flags,
+		},
+	})
+}
+
+func (b *Bot) handleLeaderboard(
+	s *discordgo.Session,
+	i *discordgo.InteractionCreate,
+	opts optionMap,
+) {
+	var channel *discordgo.ApplicationCommandInteractionDataOption
+	if c, ok := opts["channel"]; ok {
+		channel = c
+	}
+
+	var flags discordgo.MessageFlags
+	if ephemeral, ok := opts["ephemeral"]; ok {
+		if ephemeral.BoolValue() {
+			flags = discordgo.MessageFlagsEphemeral
+		}
+	}
+
+	var q string
+	var args []any
+	if channel != nil {
+		q = "SELECT user_id, end_time, start_time FROM user_sessions WHERE guild_id = ? AND channel_id = ?"
+		args = []any{i.GuildID, channel.ChannelValue(nil).ID}
+	} else {
+		q = "SELECT user_id, end_time, start_time FROM user_sessions WHERE guild_id = ?"
+		args = []any{i.GuildID}
+	}
+
+	var rows []struct {
+		UserID    string
+		StartTime time.Time
+		EndTime   *time.Time
+	}
+	if err := b.db.Raw(q, args...).Scan(&rows).Error; err != nil {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: fmt.Sprintf("Error fetching leaderboard: %v", err),
+			},
+		})
+		return
+	}
+
+	usersTotal := map[string]time.Duration{}
+	for _, row := range rows {
+		if row.EndTime == nil {
+			t := time.Now()
+			row.EndTime = &t
+		}
+		usersTotal[row.UserID] += row.EndTime.Sub(row.StartTime)
+	}
+
+	type kv struct {
+		User  string
+		Total time.Duration
+	}
+
+	var sd []kv
+	for k, v := range usersTotal {
+		sd = append(sd, kv{k, v})
+	}
+
+	sort.Slice(sd, func(i, j int) bool {
+		return sd[i].Total > sd[j].Total
+	})
+
+	var content string
+	for n, kv := range sd {
+		u, err := s.User(kv.User)
+		if err != nil {
+			log.Printf("Error fetching user: %v", err)
+			continue
+		}
+
+		content += fmt.Sprintf(
+			"%d. %s: %s\n",
+			n+1,
+			u.Mention(),
+			kv.Total.Truncate(time.Second),
+		)
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: content,
+			Flags:   flags,
 		},
 	})
 }

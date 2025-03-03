@@ -32,33 +32,6 @@ type UserSession struct {
 
 var commands = []*discordgo.ApplicationCommand{
 	{
-		Name:        "timespent",
-		Description: "Get the time spent of a user in VC",
-		Options: []*discordgo.ApplicationCommandOption{
-			{
-				Name:        "user",
-				Description: "User to get time spent for",
-				Type:        discordgo.ApplicationCommandOptionUser,
-				Required:    true,
-			},
-			{
-				Name:        "channel",
-				Description: "Name of the channel",
-				Type:        discordgo.ApplicationCommandOptionChannel,
-				ChannelTypes: []discordgo.ChannelType{
-					discordgo.ChannelTypeGuildVoice,
-				},
-				Required: false,
-			},
-			{
-				Name:        "ephemeral",
-				Description: "The message is only visibile to you",
-				Type:        discordgo.ApplicationCommandOptionBoolean,
-				Required:    false,
-			},
-		},
-	},
-	{
 		Name:        "leaderboard",
 		Description: "VC activity leaderboard",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -152,9 +125,7 @@ func NewBot(token string, appid string) (*Bot, error) {
 		}
 
 		data := i.ApplicationCommandData()
-		if data.Name == "timespent" {
-			b.handleTimespent(s, i, parseOptions(data.Options))
-		} else if data.Name == "leaderboard" {
+		if data.Name == "leaderboard" {
 			b.handleLeaderboard(s, i, parseOptions(data.Options))
 		}
 	})
@@ -239,77 +210,6 @@ func (b *Bot) userJoin(s *discordgo.Session, vs *discordgo.VoiceStateUpdate) {
 	}
 }
 
-func (b *Bot) handleTimespent(
-	s *discordgo.Session,
-	i *discordgo.InteractionCreate,
-	opts optionMap,
-) {
-	usr, ok := opts["user"]
-	if !ok {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "User is required",
-			},
-		})
-		return
-	}
-	usrID := usr.UserValue(nil).ID
-
-	var channel *discordgo.ApplicationCommandInteractionDataOption
-	if c, ok := opts["channel"]; ok {
-		channel = c
-	}
-
-	var q string
-	var args []any
-	if channel != nil {
-		q = "SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ? AND channel_id = ?"
-		args = []any{usrID, i.GuildID, channel.ChannelValue(nil).ID}
-	} else {
-		q = "SELECT * FROM user_sessions WHERE user_id = ? AND guild_id = ?"
-		args = []any{usrID, i.GuildID}
-	}
-	var sessions []UserSession
-	if err := b.db.Raw(q, args...).Scan(&sessions).Error; err != nil {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: fmt.Sprintf("Error fetching user sessions: %v", err),
-			},
-		})
-		return
-	}
-
-	var total time.Duration
-	for _, se := range sessions {
-		if se.EndTime == nil {
-			t := time.Now()
-			se.EndTime = &t
-		}
-		total += se.EndTime.Sub(se.StartTime)
-	}
-
-	flags := discordgo.MessageFlagsSuppressNotifications
-	if ephemeral, ok := opts["ephemeral"]; ok {
-		if ephemeral.BoolValue() {
-			flags = discordgo.MessageFlagsEphemeral
-		}
-	}
-
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf(
-				"User %s has spent %s in voice channels",
-				usr.UserValue(nil).Mention(),
-				total.Truncate(time.Second),
-			),
-			Flags: flags,
-		},
-	})
-}
-
 func (b *Bot) handleLeaderboard(
 	s *discordgo.Session,
 	i *discordgo.InteractionCreate,
@@ -320,7 +220,7 @@ func (b *Bot) handleLeaderboard(
 		channel = c
 	}
 
-	flags := discordgo.MessageFlagsSuppressNotifications
+	var flags discordgo.MessageFlags
 	if ephemeral, ok := opts["ephemeral"]; ok {
 		if ephemeral.BoolValue() {
 			flags = discordgo.MessageFlagsEphemeral

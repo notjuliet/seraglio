@@ -275,7 +275,8 @@ func (b *Bot) handleLeaderboard(
 		return sd[i].Total > sd[j].Total
 	})
 
-	var content string
+	var users string
+	var times string
 	for n, kv := range sd {
 		u, err := s.User(kv.User)
 		if err != nil {
@@ -283,12 +284,40 @@ func (b *Bot) handleLeaderboard(
 			continue
 		}
 
-		content += fmt.Sprintf(
-			"%d. %s: %s\n",
-			n+1,
-			u.Mention(),
-			kv.Total.Truncate(time.Second),
-		)
+		days := kv.Total / (24 * time.Hour)
+		kv.Total -= days * 24 * time.Hour
+
+		hours := kv.Total / time.Hour
+		kv.Total -= hours * time.Hour
+
+		minutes := kv.Total / time.Minute
+		kv.Total -= minutes * time.Minute
+
+		seconds := kv.Total / time.Second
+
+		var result string
+
+		if days > 0 {
+			result += fmt.Sprintf("%dd ", days)
+		}
+		if hours > 0 {
+			result += fmt.Sprintf("%dh ", hours)
+		}
+		if minutes > 0 {
+			result += fmt.Sprintf("%dm ", minutes)
+		}
+		if seconds > 0 {
+			result += fmt.Sprintf("%ds ", seconds)
+		}
+
+		if len(result) > 0 {
+			result = result[:len(result)-1]
+		} else {
+			result = "0s"
+		}
+
+		users += fmt.Sprintf("**%d.** %s\n", n+1, u.Mention())
+		times += fmt.Sprintf("%s\n", result)
 	}
 
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -300,8 +329,14 @@ func (b *Bot) handleLeaderboard(
 					Title: "Leaderboard",
 					Fields: []*discordgo.MessageEmbedField{
 						{
-							Name:  "Time Spent in VC",
-							Value: content,
+							Name:   "Rank",
+							Value:  users,
+							Inline: true,
+						},
+						{
+							Name:   "Time",
+							Value:  times,
+							Inline: true,
 						},
 					},
 				},
